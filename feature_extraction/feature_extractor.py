@@ -15,8 +15,8 @@ labels = {}
 features = {}
 #Should work after running converter.py
 datadir = "../data/processed/"
-frame_size = 0.050
-frame_stepsize = 0.025
+frame_size = 0.050*2
+frame_stepsize = 0.025*2
 print("Frame_size: {},  Step_size: {}".format(frame_size, frame_stepsize))
 total = 0
 for i, dirname in enumerate(os.listdir(datadir)):
