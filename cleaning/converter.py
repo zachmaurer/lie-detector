@@ -4,9 +4,11 @@ import json
 from pydub import AudioSegment
 from sklearn.cluster import KMeans
 import numpy as np
+import string
 
 RAW_DATA_PATH = os.path.abspath("../data/raw")
 PROCESSED_DATA_PATH = os.path.abspath("../data/processed")
+FEATURES_PATH = os.path.abspath("../data/features")
 
 PEDAL_CORR_HEADER = 18
 PEDAL_CORR_CSV = "{}_labels.csv"
@@ -15,8 +17,39 @@ PUNC_TEXTGRID_HEADER = 4
 PUNC_ALIGNED_CSV = "{}_labels_aligned.csv"
 PUNC_ALIGNED_JSON = "{}_labels_aligned.json"
 
+PROCESSED_TRANSCRIPTS = "processed_transcripts.csv"
+
 AUDIO_FILE = "{}_R_16k.flac"
 PROCESSED_AUDIO = "{}_{}_{}.wav"
+
+
+
+###
+def processTranscript(transcript):
+  transcript = transcript.replace('>', ' ').replace('<', ' ').replace('\"', '').replace("/", ' ')
+  #replace_punctuation = str.maketrans(string.punctuation, ' '*len(string.punctuation))
+  #transcript = transcript.translate(replace_punctuation)
+  transcript = [x.strip() for x in transcript.split(' ') if x]
+  transcript = ' '.join(transcript)
+  return transcript
+
+
+def combineTranscripts():
+  transcripts = dict()
+  example_dirs = [f for f in os.listdir(PROCESSED_DATA_PATH) if f[0] != "."]
+  for directory in example_dirs:
+    subj_transcripts = json.load(open(os.path.join(PROCESSED_DATA_PATH, directory, PUNC_ALIGNED_JSON.format(directory))))
+    for x in subj_transcripts:
+      subject = x['subject']
+      interval = x['interval']
+      label = x['label']
+      transcript = processTranscript(x['transcript'])
+      key = PROCESSED_AUDIO.format(subject, interval, label)
+      transcripts[key] = transcript
+  outfile = os.path.join(FEATURES_PATH, "tokenized_transcripts.json")
+  with open(outfile, 'w') as outfile:
+    json.dump(transcripts, outfile)
+
 
 
 # This converter script needs the following file structure to run.
@@ -237,6 +270,7 @@ def parseArgs():
   parser.add_argument('--aligned', action='store_true', help='', default = False)
   parser.add_argument('--audio', action='store_true', help='', default = False)
   parser.add_argument('--silence', action='store_true', help='', default = False)
+  parser.add_argument('--transcripts', action='store_true', help='', default = False)
   parser.add_argument('--all', action='store_true', help='', default = False)
   return parser.parse_args()
 
@@ -254,6 +288,9 @@ def main():
   if args.silence or args.all:
     removeArtifacts()
     print("Done removing silence and artifacts.")
+  if args.transcripts  or args.all:
+    combineTranscripts()
+    print("Done combining transcripts.")
     
     
 
