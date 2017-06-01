@@ -72,8 +72,11 @@ def parseConfig(description="Hybrid text and audio RNN"):
 ############
 
 def hybrid_train(model, loss_fn, optimizer, num_epochs = 1):
+  lr = model.config.lr
   for epoch in range(num_epochs):
-      print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
+      print('Starting epoch %d / %d with lr %.6f' % (epoch + 1, num_epochs, lr))
+      optimizer = optim.Adam(model.parameters(), lr = lr)
+      lr *= 0.955
       model.train()
       loss_total = 0
       for t, (x, transcript, y) in enumerate(model.config.train_loader):

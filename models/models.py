@@ -110,18 +110,18 @@ class RNNHybrid_1(nn.Module):
     self.flat_dim = config.max_length * self.hidden_size    
     self.audio_decoder = nn.Sequential(
                     Flatten(),
+                    nn.Dropout(0.3),
                     nn.Linear(self.flat_dim, 2*self.hidden_size),
                     nn.BatchNorm1d(2*self.hidden_size),
                     nn.ReLU(),
-                    nn.Dropout(0.1),
+                    nn.Dropout(0.3),
                     nn.Linear(2*self.hidden_size, self.hidden_size)
             )
 
     self.lex_decoder = nn.Sequential(
                 nn.Linear(self.hidden_size, self.hidden_size),
                 nn.BatchNorm1d(self.hidden_size),
-                nn.ReLU(),
-                nn.Dropout(0.2),
+                nn.ReLU(),      
                 nn.Linear(self.hidden_size, self.hidden_size),
             )
 
