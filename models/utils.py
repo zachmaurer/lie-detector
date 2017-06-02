@@ -45,33 +45,33 @@ def splitIndices(dataset, config, shuffle = True):
 
 # Following function are only for Hybrid text-audio models (TBD)
 
-def padProcess(model, x):
-    x = [input_to_index(ex, model.vocab) for ex in x]
-    x = torch.from_numpy(pad_batch(x))
-    x_var = Variable(x.type(model.config.dtype).long())
-    return x_var
+# def padProcess(model, x):
+#     x = [input_to_index(ex, model.vocab) for ex in x]
+#     x = torch.from_numpy(pad_batch(x))
+#     x_var = Variable(x.type(model.config.dtype).long())
+#     return x_var
 
-def pad_batch(x, pad_idx = 0):
-  max_length = max([len(i) for i in x])
-  for i in range(len(x)):
-    pad = max_length - len(x[i])
-    x[i]= x[i] + [0]*pad
-  return np.array(x)
+# def pad_batch(x, pad_idx = 0):
+#   max_length = max([len(i) for i in x])
+#   for i in range(len(x)):
+#     pad = max_length - len(x[i])
+#     x[i]= x[i] + [0]*pad
+#   return np.array(x)
 
-def input_to_index(source, vocab):
-    source = source.lower().split(' ')
-    indices = []
-    for token in source:
-      if token in vocab:
-        indices.append(vocab[token])
-      else:
-        indices.append(vocab['unk'])
-    return indices
+# def input_to_index(source, vocab):
+#     source = source.lower().split(' ')
+#     indices = []
+#     for token in source:
+#       if token in vocab:
+#         indices.append(vocab[token])
+#       else:
+#         indices.append(vocab['unk'])
+#     return indices
 
 
-#############
-# DATASETS #
-#############
+#################
+# AUDIO DATASET #
+#################
 
 class AudioDataset(Dataset):
     """Dataset wrapping data and target tensors. Naive implementation does data preprocessing per 'get_item' call
@@ -82,6 +82,7 @@ class AudioDataset(Dataset):
         data_path (str): path to image folder
     """
     def __init__(self, config):
+      #super.__init__()
       self.labels, self.features, self.examples = None, None, None
       with open(config.feats, 'r') as data:
         self.features = ujson.load(data)
@@ -118,6 +119,46 @@ class AudioDataset(Dataset):
       print("--- Distribution of {} Data ---".format(msg))
       print("TRUTH: {} ({:.2f}%)".format(truths, truths / len(indices) *100))
       print("LIE: {} ({:.2f}%)\n".format(lies, lies / len(indices) *100))  
+
+
+##################
+# HYBRID DATASET #
+##################
+
+class HybridDataset(AudioDataset):
+    """Dataset wrapping data and target tensors. Naive implementation does data preprocessing per 'get_item' call
+    Each sample will be retrieved by indexing both tensors along the first
+    dimension.
+    
+    Arguments:
+        data_path (str): path to image folder
+    """
+    def __init__(self, config, vocab):
+      super().__init__(config)
+      # Load Transcripts
+      self.transcripts = ujson.load(open(config.transcripts, 'r'))
+      self.vocab = vocab
+      self.config = config
+
+    def __getitem__(self, idx):
+      key = self.examples[idx]
+      label = self.labels[key]
+      feats = self.features[key]
+      transcript = self._EncodeTranscript(self.transcripts[key], self.config.transcript_length)
+      transcript = torch.LongTensor(transcript) if not self.config.use_gpu else torch.LongTensor(transcript).cuda()
+      return feats, transcript, label
+
+    def _EncodeTranscript(self, transcript, max_length):
+      source = transcript.split(' ')
+      indices = []
+      for i, token in enumerate(source):
+        if token in self.vocab:
+          indices.append(self.vocab[token])
+        else:
+          indices.append(self.vocab['unk'])
+      indices = indices + [self.vocab['<PAD>']]*(max_length - len(indices))
+      indices = indices[0:max_length]
+      return indices
 
 
 
