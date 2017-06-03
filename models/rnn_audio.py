@@ -1,6 +1,7 @@
 
 # Python Imports
 import argparse
+import copy
 
 # Torch Imports
 import torch
@@ -17,6 +18,7 @@ from torch.utils.data.sampler import SubsetRandomSampler
 # Our modules
 from models import *
 from utils import *
+
 
 ############
 ## CONFIG ##
@@ -38,6 +40,8 @@ class Config:
     self.use_gpu = args.gpu
     self.dtype = cuda.FloatTensor if self.use_gpu else FloatTensor
     self.num_classes = 2
+    self.finetuning_lr = args.ftlr
+    self.finetuning_epochs = args.fte
 
   def __str__(self):
     properties = vars(self)
@@ -54,13 +58,15 @@ def parseConfig(description="Default Model Description"):
   parser.add_argument('--length', type=int, help='length of sequence', default = 300)
   parser.add_argument('--bs', type=int, help='batch size for training', default = 20)
   parser.add_argument('--e', type=int, help='number of epochs', default = 10)
-  parser.add_argument('--nt', type=int, help='number of training examples', default = 100)
+  parser.add_argument('--nt', type=int, help='number of training examples', default = 3000)
   parser.add_argument('--nv', type=int, help='number of validation examples', default = None)
   parser.add_argument('--hs', type=int, help='hidden size', default = 100)
   parser.add_argument('--lr', type=float, help='learning rate', default = 1e-3)
   parser.add_argument('--gpu', action='store_true', help='use gpu', default = False)
   parser.add_argument('--pe', type=int, help='print frequency', default = None)
   parser.add_argument('--ee', type=int, help='eval frequency', default = None)
+  parser.add_argument('--fte', type=int, help='number of finetuning epochs', default = 5)
+  parser.add_argument('--ftlr', type=int, help='finetuning learning rate', default = 2e-3)
   args = parser.parse_args()
   return args
 
@@ -69,6 +75,8 @@ def parseConfig(description="Default Model Description"):
 ############
 
 def train(model, loss_fn, optimizer, num_epochs = 1):
+  best_model = None
+  best_val_acc = 0
   for epoch in range(num_epochs):
       print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
       model.train()
@@ -93,11 +101,16 @@ def train(model, loss_fn, optimizer, num_epochs = 1):
           
       print("--- Evaluating ---")
       check_accuracy(model, model.config.train_loader, type = "train")
-      check_accuracy(model, model.config.val_loader, type = "val")
+      val_acc = check_accuracy(model, model.config.val_loader, type = "val")
+      if val_acc > best_val_acc:
+        best_val_acc = val_acc
+        best_model = copy.deepcopy(model)
       print("\n")
   print("\n--- Final Evaluation ---")
   check_accuracy(model, model.config.train_loader, type = "train")
   check_accuracy(model, model.config.val_loader, type = "val")
+  # Return model with best validation accuracy
+  return best_model
   #check_accuracy(model, model.config.test_loader, type = "test")
 
 
@@ -116,7 +129,51 @@ def check_accuracy(model, loader, type=""):
       #print("Completed evaluating {} examples".format(t*model.config.batch_size))
   acc = float(num_correct) / num_samples
   print('Got %d / %d correct (%.2f)' % (num_correct, num_samples, 100 * acc))
+  return acc
 
+def eval_on_test_set(model,loss_fn,num_epochs=1):
+  #first check the accuracy of the model on all of the data
+  print "Trained model on all test data:"
+  check_accuracy(model,model.config.test_loader_all,type="test")
+  """
+  #Finetuning doesn't work
+  print "Now trying finetuning"
+  #Freeze the layers, replace the final layer with a fully connected layer
+  num_ft = model.fc.in_features
+  for param in model.parameters():
+    param.requires_grad = False
+  model.fc = nn.Linear(num_ft, 2)
+
+  optimizer = optim.Adam(model.fc.parameters(), lr = model.config.finetuning_lr) 
+
+  #try to train
+  for epoch in range(num_epochs):
+      print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
+      model.train()
+      loss_total = 0
+      for t, (x, y) in enumerate(model.config.test_loader_finetuning):
+          x_var = Variable(x)
+          y_var = Variable(y.type(model.config.dtype).long())
+          scores = model(x_var) 
+          loss = loss_fn(scores, y_var)
+          
+          loss_total += loss.data[0]
+          optimizer.zero_grad()
+          loss.backward()
+
+          optimizer.step()
+
+          if ((t+1) % 10) == 0:
+            grad_magnitude = [(x.grad.data.sum(), torch.numel(x.grad.data)) for x in model.parameters() if x.grad.data.sum() != 0.0]
+            grad_magnitude = sum([abs(x[0]) for x in grad_magnitude]) #/ sum([x[1] for x in grad_magnitude])
+            print('t = %d, avg_loss = %.4f, grad_mag = %.2f' % (t + 1, loss_total / (t+1), grad_magnitude))
+      print("--- Evaluating ---")
+      check_accuracy(model, model.config.train_loader, type = "Finetuning training")
+      check_accuracy(model, model.config.val_loader, type = "Finetuning held out")
+  print("\n--- Final Evaluation after finetuning ---")
+  check_accuracy(model, model.config.test_loader_finetuning, type = "Finetuning training")
+  check_accuracy(model, model.config.test_loader_holdout, type = "Finetuning held out")
+  """
 
 ########
 # MAIN #
@@ -139,22 +196,39 @@ def main():
 
 
   # Load Data
-  train_dataset = AudioDataset(config)
+  #new getAudioDatasets util lets you specify subjects to hold out from training and val datasets. 
+  #train_dataset = AudioDataset(config)
+  train_dataset, test_dataset = getAudioDatasets(config,hold_out={15})
+  train_idx, val_idx = splitIndices(train_dataset, config.nt, config.nv, shuffle = True)
+  test_finetuning_idx, test_holdout_idx = splitIndices(test_dataset,4*len(test_dataset)/5, shuffle = True)
 
-  train_idx, val_idx = splitIndices(train_dataset, config, shuffle = True)
   train_sampler, val_sampler = SubsetRandomSampler(train_idx), SubsetRandomSampler(val_idx)
+  test_finetuning_sampler, test_holdout_sampler = SubsetRandomSampler(test_finetuning_idx), SubsetRandomSampler(test_holdout_idx)
+
   train_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 3, sampler = train_sampler)
   val_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 1, sampler = val_sampler)
+  test_loader_finetuning = DataLoader(test_dataset, batch_size = config.batch_size/2, num_workers = 1, sampler = test_finetuning_sampler)
+  test_loader_holdout = DataLoader(test_dataset, batch_size = config.batch_size/2, num_workers = 1, sampler = test_holdout_sampler)
+  test_loader_all = DataLoader(test_dataset, batch_size=config.batch_size)
 
   train_dataset.printDistributions(train_idx, msg = "Training")
   train_dataset.printDistributions(val_idx, msg = "Val")
+  test_dataset.printDistributions(range(len(test_dataset)), msg="Test")
 
   config.train_loader = train_loader
   config.val_loader = val_loader
+  config.test_loader_all = test_loader_all
+  config.test_loader_finetuning = test_loader_finetuning
+  config.test_loader_holdout = test_loader_holdout
 
   optimizer = optim.Adam(model.parameters(), lr = config.lr) 
   loss_fn = nn.CrossEntropyLoss().type(config.dtype)
-  train(model, loss_fn, optimizer, config.epochs)
+  best_model = train(model, loss_fn, optimizer, config.epochs)
+
+  #test on the held out speaker
+  eval_on_test_set(best_model, loss_fn, config.finetuning_epochs)
+
+
   
 
 if __name__ == '__main__':
