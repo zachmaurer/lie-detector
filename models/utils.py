@@ -1,9 +1,12 @@
+
 import torch
 import ujson
 from torch.utils.data.dataset import Dataset
 import random
 import numpy as np
 from torch.autograd import Variable
+import re
+import json
 
 ##############
 # CONSTANTS #
@@ -26,25 +29,28 @@ def pad_tensor(tensor, length):
   new = torch.cat((tensor, zeros), dim = 1)
   return new
 
-def splitIndices(dataset, config, shuffle = True):
+def splitIndices(dataset, num_train, num_val=False, shuffle = True):
     #random.seed(config.seed)
     length = len(dataset)
-    assert(length > config.nt)
+    assert(length > num_val)
     indices = list(range(0, length))  
     if shuffle:  
         random.shuffle(indices)
-    if config.nv:
-        num_val = config.nv
+    if num_val:
         val = indices[0:num_val]    
-        train = indices[num_val:config.nt + num_val]
+        train = indices[num_val:num_train + num_val]
     else:
-        num_val = length - config.nt
+        print num_train
+        print length
+        num_val = length - num_train
+        print num_val
         val = indices[0:num_val]    
         train = indices[num_val:]
     return train, val
 
 # Following function are only for Hybrid text-audio models (TBD)
 
+<<<<<<< Updated upstream
 # def padProcess(model, x):
 #     x = [input_to_index(ex, model.vocab) for ex in x]
 #     x = torch.from_numpy(pad_batch(x))
@@ -72,6 +78,50 @@ def splitIndices(dataset, config, shuffle = True):
 #################
 # AUDIO DATASET #
 #################
+=======
+def padProcess(model, x):
+    x = [input_to_index(ex, model.vocab) for ex in x]
+    x = torch.from_numpy(pad_batch(x))
+    x_var = Variable(x.type(model.config.dtype).long())
+    return x_var
+
+def pad_batch(x, pad_idx = 0):
+  max_length = max([len(i) for i in x])
+  for i in range(len(x)):
+    pad = max_length - len(x[i])
+    x[i]= x[i] + [0]*pad
+  return np.array(x)
+
+def input_to_index(source, vocab):
+    source = source.lower().split(' ')
+    indices = []
+    for token in source:
+      if token in vocab:
+        indices.append(vocab[token])
+      else:
+        indices.append(vocab['unk'])
+    return indices
+
+"""
+Super hacky way to extract int value of subject from the data we are reading, gets first number out of the filename
+"""
+def get_id(audiofile_name):
+    return int(re.search(r'\d+', audiofile_name).group())
+"""
+returns two AudioDatasets: one that contains all subjects except those specified to be held out for testing, and one that contains only the held out subjects.
+If no heldout subjects are specified, then simply returns all the data in one dataset and returns None instead of a test dataset.
+"""
+def getAudioDatasets(config,hold_out=False):
+    if hold_out:
+      #hold out everything from the test set that will be in the training set
+      hold_out_test = {x for x in xrange(1,33) if x not in hold_out} 
+      return AudioDataset(config, hold_out=hold_out), AudioDataset(config, hold_out=hold_out_test)
+    else:
+      return AudioDataset(config), None
+
+#############
+# DATASETS #
+#############
 
 class AudioDataset(Dataset):
     """Dataset wrapping data and target tensors. Naive implementation does data preprocessing per 'get_item' call
@@ -81,15 +131,25 @@ class AudioDataset(Dataset):
     Arguments:
         data_path (str): path to image folder
     """
-    def __init__(self, config):
-      #super.__init__()
+    def __init__(self, config,hold_out = False):
       self.labels, self.features, self.examples = None, None, None
       with open(config.feats, 'r') as data:
-        self.features = ujson.load(data)
+        self.features = json.load(data)
       with open(config.labels, 'r') as labels:
-        self.labels = ujson.load(labels)
+        self.labels = json.load(labels)
       assert(self.features and self.labels)
-      self.examples = list(self.labels.keys())
+      self.examples = []
+      """
+      If we want to hold a speaker out for test time, then hold_out should be a set holding all the integers for the speakers to hold out
+      """
+      if hold_out:
+        self.examples = [k for k in self.labels.keys() if get_id(k) not in hold_out]
+      else:
+        self.examples = [k for k in self.labels.keys()]
+
+
+
+
       for key in self.examples:
         feat_tensor = (torch.FloatTensor(self.features[key])[:, 0:config.max_length]).contiguous().type(config.dtype)
         if feat_tensor.size(1) < config.max_length:
@@ -117,8 +177,8 @@ class AudioDataset(Dataset):
         else:
           truths += 1
       print("--- Distribution of {} Data ---".format(msg))
-      print("TRUTH: {} ({:.2f}%)".format(truths, truths / len(indices) *100))
-      print("LIE: {} ({:.2f}%)\n".format(lies, lies / len(indices) *100))  
+      print("TRUTH: {} ({:.2f}%)".format(truths, 1.0*truths / len(indices) *100))
+      print("LIE: {} ({:.2f}%)\n".format(lies, 1.0*lies / len(indices) *100))  
 
 
 ##################
