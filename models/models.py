@@ -37,7 +37,7 @@ class SimpleAudioRNN(nn.Module):
 #### ARCHIVED: ComplexAudioRNN_1
 
 class ComplexAudioRNN_1(nn.Module):
-  def __init__(self, config, feature_size = 34):
+  def __init__(self, config, feature_size = 68):
     super(ComplexAudioRNN_1, self).__init__()
     # Do not change model, copy and paste into new class.
     self.config = config
@@ -61,7 +61,7 @@ class ComplexAudioRNN_1(nn.Module):
 #### UNDER_DEVELOPMENT: ComplexAudioRNN_2
 
 class ComplexAudioRNN_2(nn.Module):
-  def __init__(self, config, audio_dim = 34):
+  def __init__(self, config, audio_dim = 68):
     super(ComplexAudioRNN_2, self).__init__()
     self.config = config
     self.rnn = nn.LSTM(audio_dim, config.hidden_size, batch_first = True)
