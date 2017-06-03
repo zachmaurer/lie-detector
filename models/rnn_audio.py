@@ -48,6 +48,7 @@ class Config:
 
 def parseConfig(description="Default Model Description"):
   parser = argparse.ArgumentParser(description=description)
+  
   parser.add_argument('--feats', type=str, help='input features path', default = "../data/features/extracted_features_0.1_0.05.json")
   parser.add_argument('--labels', type=str, help='input labels', default = "../data/features/labels_0.1_0.05.json")
   parser.add_argument('--length', type=int, help='length of sequence', default = 300)
@@ -131,7 +132,7 @@ def main():
   #vocab, embeddings, embedding_dim = load_word_vectors('.', 'glove.6B', 100)
 
   # Model
-  model = ComplexAudioRNN_1(config)
+  model = ComplexAudioRNN_2(config)
   model.apply(initialize_weights)
   if config.use_gpu:
     model = model.cuda()
