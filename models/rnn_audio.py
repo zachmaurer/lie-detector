@@ -14,7 +14,7 @@ from torch.utils.data import DataLoader
 from torch import cuda, FloatTensor
 from torch import nn
 from torch.utils.data.sampler import SubsetRandomSampler
-
+import numpy as np
 # Our modules
 from models import *
 from utils import *
@@ -74,19 +74,18 @@ def parseConfig(description="Default Model Description"):
 # TRAINING #
 ############
 
-def train(model, loss_fn, optimizer, num_epochs = 1):
+def train(model, loss_fn, optimizer, num_epochs = 1, logger = None, hold_out = -1):
   best_model = None
   best_val_acc = 0
   for epoch in range(num_epochs):
       print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
       model.train()
       loss_total = 0
-      for t, (x, y) in enumerate(model.config.train_loader):
+      for t, (x, y, _) in enumerate(model.config.train_loader):
           x_var = Variable(x)
           y_var = Variable(y.type(model.config.dtype).long())
           scores = model(x_var) 
           loss = loss_fn(scores, y_var)
-          
           loss_total += loss.data[0]
           optimizer.zero_grad()
           loss.backward()
@@ -107,34 +106,42 @@ def train(model, loss_fn, optimizer, num_epochs = 1):
         best_model = copy.deepcopy(model)
       print("\n")
   print("\n--- Final Evaluation ---")
-  check_accuracy(model, model.config.train_loader, type = "train")
-  check_accuracy(model, model.config.val_loader, type = "val")
+  check_accuracy(model, model.config.train_loader, type = "train", logger = logger, hold_out = hold_out)
+  check_accuracy(model, model.config.val_loader, type = "val", logger = logger, hold_out = hold_out)
   # Return model with best validation accuracy
   return best_model
   #check_accuracy(model, model.config.test_loader, type = "test")
 
 
-def check_accuracy(model, loader, type=""):
+def check_accuracy(model, loader, type="", logger = None, hold_out = -1):
   print("Checking accuracy on {} set".format(type))
   num_correct = 0
   num_samples = 0
+  examples, all_labels, all_predicted = [], [], []
   model.eval() # Put the model in test mode (the opposite of model.train(), essentially)
-  for t, (x, y) in enumerate(loader):
+  for t, (x, y, keys) in enumerate(loader):
       x_var = Variable(x)
       #y_var = Variable(y.type(model.config.dtype).long())
       scores = model(x_var)
       _, preds = scores.data.cpu().max(1)
       num_correct += (preds == y).sum()
       num_samples += preds.size(0)
+      examples.extend(keys)
+      all_labels.extend(list(y))
+      all_predicted.extend(list(np.ndarray.flatten(preds.numpy())))
       #print("Completed evaluating {} examples".format(t*model.config.batch_size))
   acc = float(num_correct) / num_samples
   print('Got %d / %d correct (%.2f)' % (num_correct, num_samples, 100 * acc))
+  if logger:
+    for i in range(len(examples)):
+      row = "{},{},{},{},{}".format(type, examples[i], all_labels[i], all_predicted[i], hold_out)
+      logger.logResult(row)
   return acc
 
-def eval_on_test_set(model,loss_fn,num_epochs=1):
+def eval_on_test_set(model,loss_fn,num_epochs=1, logger = None, hold_out = -1):
   #first check the accuracy of the model on all of the data
-  print "Trained model on all test data:"
-  check_accuracy(model,model.config.test_loader_all,type="test")
+  print("Trained model on all test data:")
+  check_accuracy(model,model.config.test_loader_all,type="test", logger = logger, hold_out = hold_out)
   """
   #Finetuning doesn't work
   print "Now trying finetuning"
@@ -185,11 +192,13 @@ def main():
   config = Config(args) 
   print(config)
 
+  logger = Logger()
+  print("Logging destination: ", logger)
   # Load Embeddings
   #vocab, embeddings, embedding_dim = load_word_vectors('.', 'glove.6B', 100)
 
   # Model
-  model = ComplexAudioRNN_2(config)
+  model = ComplexAudioRNN_2(config, audio_dim = 34)
   model.apply(initialize_weights)
   if config.use_gpu:
     model = model.cuda()
@@ -211,9 +220,9 @@ def main():
   test_loader_holdout = DataLoader(test_dataset, batch_size = config.batch_size/2, num_workers = 1, sampler = test_holdout_sampler)
   test_loader_all = DataLoader(test_dataset, batch_size=config.batch_size)
 
-  train_dataset.printDistributions(train_idx, msg = "Training")
-  train_dataset.printDistributions(val_idx, msg = "Val")
-  test_dataset.printDistributions(range(len(test_dataset)), msg="Test")
+  train_dataset.printDistributions(train_idx, msg = "Training", logger= logger)
+  train_dataset.printDistributions(val_idx, msg = "Val",  logger= logger)
+  test_dataset.printDistributions(range(len(test_dataset)), msg="Test",  logger= logger)
 
   config.train_loader = train_loader
   config.val_loader = val_loader
@@ -223,10 +232,10 @@ def main():
 
   optimizer = optim.Adam(model.parameters(), lr = config.lr) 
   loss_fn = nn.CrossEntropyLoss().type(config.dtype)
-  best_model = train(model, loss_fn, optimizer, config.epochs)
+  best_model = train(model, loss_fn, optimizer, config.epochs, logger = logger, hold_out = -1)
 
   #test on the held out speaker
-  eval_on_test_set(best_model, loss_fn, config.finetuning_epochs)
+  eval_on_test_set(best_model, loss_fn, config.finetuning_epochs, logger = logger, hold_out = -1)
 
 
   
