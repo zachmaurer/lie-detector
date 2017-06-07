@@ -226,8 +226,8 @@ class HybridDataset(AudioDataset):
     Arguments:
         data_path (str): path to image folder
     """
-    def __init__(self, config, vocab):
-      super().__init__(config)
+    def __init__(self, config, vocab, hold_out=False):
+      super().__init__(config, hold_out)
       # Load Transcripts
       self.transcripts = ujson.load(open(config.transcripts, 'r'))
       self.vocab = vocab
