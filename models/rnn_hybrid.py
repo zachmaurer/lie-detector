@@ -71,12 +71,12 @@ def parseConfig(description="Hybrid text and audio RNN"):
 # TRAINING #
 ############
 
-def hybrid_train(model, loss_fn, optimizer, num_epochs = 1):
+def hybrid_train(model, loss_fn, optimizer, num_epochs = 1, logger = None, hold_out = -1):
   for epoch in range(num_epochs):
       print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
       model.train()
       loss_total = 0
-      for t, (x, transcript, y) in enumerate(model.config.train_loader):
+      for t, (x, transcript, y, _) in enumerate(model.config.train_loader):
           x_var = Variable(x)
           transcript_var = Variable(transcript)
           y_var = Variable(y.type(model.config.dtype).long())
@@ -99,17 +99,18 @@ def hybrid_train(model, loss_fn, optimizer, num_epochs = 1):
       check_accuracy(model, model.config.val_loader, type = "val")
       print("\n")
   print("\n--- Final Evaluation ---")
-  check_accuracy(model, model.config.train_loader, type = "train")
-  check_accuracy(model, model.config.val_loader, type = "val")
+  check_accuracy(model, model.config.train_loader, type = "train", logger = logger, hold_out = hold_out)
+  check_accuracy(model, model.config.val_loader, type = "val", logger = logger, hold_out = hold_out)
   #check_accuracy(model, model.config.test_loader, type = "test")
 
 
-def check_accuracy(model, loader, type=""):
+def check_accuracy(model, loader, type="", logger = None, hold_out = -1):
   print("Checking accuracy on {} set".format(type))
   num_correct = 0
   num_samples = 0
+  examples, all_labels, all_predicted = [], [], []
   model.eval() # Put the model in test mode (the opposite of model.train(), essentially)
-  for t, (x, transcript, y) in enumerate(loader):
+  for t, (x, transcript, y, keys) in enumerate(loader):
       x_var = Variable(x)
       transcript_var = Variable(transcript)
       #y_var = Variable(y.type(model.config.dtype).long())
@@ -117,11 +118,21 @@ def check_accuracy(model, loader, type=""):
       _, preds = scores.data.cpu().max(1)
       num_correct += (preds == y).sum()
       num_samples += preds.size(0)
+      examples.extend(keys)
+      all_labels.extend(list(y))
+      all_predicted.extend(list(np.ndarray.flatten(preds.numpy())))
       #print("Completed evaluating {} examples".format(t*model.config.batch_size))
   acc = float(num_correct) / num_samples
   print('Got %d / %d correct (%.2f)' % (num_correct, num_samples, 100 * acc))
+  if logger:
+    for i in range(len(examples)):
+      row = "{},{},{},{},{}".format(type, examples[i], all_labels[i], all_predicted[i], hold_out)
+      logger.logResult(row)
 
-
+def eval_on_test_set(model,loss_fn,num_epochs=1, logger = None, hold_out = -1):
+  #first check the accuracy of the model on all of the data
+  print("Trained model on all test data:")
+  check_accuracy(model,model.config.test_loader_all,type="test", logger = logger, hold_out = hold_out)
 ########
 # MAIN #
 ########
@@ -131,6 +142,9 @@ def main():
   args = parseConfig()
   config = Config(args) 
   print(config)
+
+  logger = Logger()
+  print("Logging destination: ", logger)
 
   # Load Embeddings
   vocab, embeddings, embedding_dim = load_word_vectors('../data/glove', 'glove.6B', 100)
@@ -156,13 +170,13 @@ def main():
   config.val_loader = val_loader
 
   # Print Distributions
-  train_dataset.printDistributions(train_idx, msg = "Training")
-  train_dataset.printDistributions(val_idx, msg = "Val")
+  train_dataset.printDistributions(train_idx, msg = "Training", logger= logger)
+  train_dataset.printDistributions(val_idx, msg = "Val", logger= logger)
 
   # Train
   optimizer = optim.Adam(model.parameters(), lr = config.lr) 
   loss_fn = nn.CrossEntropyLoss().type(config.dtype)
-  hybrid_train(model, loss_fn, optimizer, config.epochs)
+  hybrid_train(model, loss_fn, optimizer, config.epochs, logger= logger)
   
 
 if __name__ == '__main__':
