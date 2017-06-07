@@ -209,7 +209,7 @@ def main():
   #train_dataset = AudioDataset(config)
   train_dataset, test_dataset = getAudioDatasets(config,hold_out={15})
   train_idx, val_idx = splitIndices(train_dataset, config.nt, config.nv, shuffle = True)
-  test_finetuning_idx, test_holdout_idx = splitIndices(test_dataset,4*len(test_dataset)/5, shuffle = True)
+  test_finetuning_idx, test_holdout_idx = splitIndices(test_dataset, len(test_dataset), shuffle = True)
 
   train_sampler, val_sampler = SubsetRandomSampler(train_idx), SubsetRandomSampler(val_idx)
   test_finetuning_sampler, test_holdout_sampler = SubsetRandomSampler(test_finetuning_idx), SubsetRandomSampler(test_holdout_idx)
