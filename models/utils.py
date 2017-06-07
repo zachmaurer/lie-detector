@@ -40,17 +40,13 @@ def splitIndices(dataset, num_train, num_val=False, shuffle = True):
         val = indices[0:num_val]    
         train = indices[num_val:num_train + num_val]
     else:
-        print num_train
-        print length
         num_val = length - num_train
-        print num_val
         val = indices[0:num_val]    
         train = indices[num_val:]
     return train, val
 
 # Following function are only for Hybrid text-audio models (TBD)
 
-<<<<<<< Updated upstream
 # def padProcess(model, x):
 #     x = [input_to_index(ex, model.vocab) for ex in x]
 #     x = torch.from_numpy(pad_batch(x))
@@ -78,7 +74,6 @@ def splitIndices(dataset, num_train, num_val=False, shuffle = True):
 #################
 # AUDIO DATASET #
 #################
-=======
 def padProcess(model, x):
     x = [input_to_index(ex, model.vocab) for ex in x]
     x = torch.from_numpy(pad_batch(x))
@@ -118,6 +113,14 @@ def getAudioDatasets(config,hold_out=False):
       return AudioDataset(config, hold_out=hold_out), AudioDataset(config, hold_out=hold_out_test)
     else:
       return AudioDataset(config), None
+
+def getHybridDatasets(config,vocab,hold_out = False):
+  if hold_out:
+    #hold out everything from the test set that will be in the training set
+    hold_out_test = {x for x in xrange(1,33) if x not in hold_out} 
+    return HybridDatasetb(config,vocab, hold_out=hold_out), HybridDataset(config,vocab, hold_out=hold_out_test)
+  else:
+    return HybridDataset(config,vocab), None
 
 #############
 # DATASETS #
