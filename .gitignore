@@ -3,3 +3,4 @@ __pycache__/
 CDC/*
 data/*
 analysis/*
+.Rproj.user

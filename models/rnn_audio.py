@@ -198,44 +198,52 @@ def main():
   #vocab, embeddings, embedding_dim = load_word_vectors('.', 'glove.6B', 100)
 
   # Model
-  model = ComplexAudioRNN_2(config, audio_dim = 34)
-  model.apply(initialize_weights)
-  if config.use_gpu:
-    model = model.cuda()
+  # model = ComplexAudioRNN_2(config, audio_dim = 34)
+  # model.apply(initialize_weights)
+  # if config.use_gpu:
+  #   model = model.cuda()
 
 
   # Load Data
   #new getAudioDatasets util lets you specify subjects to hold out from training and val datasets. 
   #train_dataset = AudioDataset(config)
-  train_dataset, test_dataset = getAudioDatasets(config,hold_out={15})
-  train_idx, val_idx = splitIndices(train_dataset, config.nt, config.nv, shuffle = True)
-  test_finetuning_idx, test_holdout_idx = splitIndices(test_dataset,4*len(test_dataset)/5, shuffle = True)
+  for hold_out in range(1, 33):
+    model = ComplexAudioRNN_1(config, audio_dim = 68)
+    print("Hold-out: ", hold_out)
+    # Weights Init
+    model.apply(initialize_weights)
+    if config.use_gpu:
+      model = model.cuda()
 
-  train_sampler, val_sampler = SubsetRandomSampler(train_idx), SubsetRandomSampler(val_idx)
-  test_finetuning_sampler, test_holdout_sampler = SubsetRandomSampler(test_finetuning_idx), SubsetRandomSampler(test_holdout_idx)
+    train_dataset, test_dataset = getAudioDatasets(config,hold_out={hold_out})
+    train_idx, val_idx = splitIndices(train_dataset, config.nt, config.nv, shuffle = True)
+    test_finetuning_idx, test_holdout_idx = splitIndices(test_dataset,len(test_dataset), shuffle = True)
 
-  train_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 3, sampler = train_sampler)
-  val_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 1, sampler = val_sampler)
-  test_loader_finetuning = DataLoader(test_dataset, batch_size = config.batch_size/2, num_workers = 1, sampler = test_finetuning_sampler)
-  test_loader_holdout = DataLoader(test_dataset, batch_size = config.batch_size/2, num_workers = 1, sampler = test_holdout_sampler)
-  test_loader_all = DataLoader(test_dataset, batch_size=config.batch_size)
+    train_sampler, val_sampler = SubsetRandomSampler(train_idx), SubsetRandomSampler(val_idx)
+    test_finetuning_sampler, test_holdout_sampler = SubsetRandomSampler(test_finetuning_idx), SubsetRandomSampler(test_holdout_idx)
 
-  train_dataset.printDistributions(train_idx, msg = "Training", logger= logger, hold_out = hold_out)
-  train_dataset.printDistributions(val_idx, msg = "Val",  logger= logger, hold_out = hold_out)
-  test_dataset.printDistributions(range(len(test_dataset)), msg="Test",  logger= logger, hold_out = hold_out)
+    train_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 3, sampler = train_sampler)
+    val_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 1, sampler = val_sampler)
+    test_loader_finetuning = DataLoader(test_dataset, batch_size = config.batch_size/2, num_workers = 1, sampler = test_finetuning_sampler)
+    test_loader_holdout = DataLoader(test_dataset, batch_size = config.batch_size/2, num_workers = 1, sampler = test_holdout_sampler)
+    test_loader_all = DataLoader(test_dataset, batch_size=config.batch_size)
 
-  config.train_loader = train_loader
-  config.val_loader = val_loader
-  config.test_loader_all = test_loader_all
-  config.test_loader_finetuning = test_loader_finetuning
-  config.test_loader_holdout = test_loader_holdout
+    train_dataset.printDistributions(train_idx, msg = "Training", logger= logger, hold_out = hold_out)
+    train_dataset.printDistributions(val_idx, msg = "Val",  logger= logger, hold_out = hold_out)
+    test_dataset.printDistributions(range(len(test_dataset)), msg="Test",  logger= logger, hold_out = hold_out)
 
-  optimizer = optim.Adam(model.parameters(), lr = config.lr) 
-  loss_fn = nn.CrossEntropyLoss().type(config.dtype)
-  best_model = train(model, loss_fn, optimizer, config.epochs, logger = logger, hold_out = -1)
+    config.train_loader = train_loader
+    config.val_loader = val_loader
+    config.test_loader_all = test_loader_all
+    config.test_loader_finetuning = test_loader_finetuning
+    config.test_loader_holdout = test_loader_holdout
 
-  #test on the held out speaker
-  eval_on_test_set(best_model, loss_fn, config.finetuning_epochs, logger = logger, hold_out = -1)
+    optimizer = optim.Adam(model.parameters(), lr = config.lr) 
+    loss_fn = nn.CrossEntropyLoss().type(config.dtype)
+    best_model = train(model, loss_fn, optimizer, config.epochs, logger = logger, hold_out = hold_out)
+
+    #test on the held out speaker
+    eval_on_test_set(best_model, loss_fn, config.finetuning_epochs, logger = logger, hold_out = hold_out)
 
 
   
