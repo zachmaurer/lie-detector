@@ -220,9 +220,9 @@ def main():
   test_loader_holdout = DataLoader(test_dataset, batch_size = config.batch_size/2, num_workers = 1, sampler = test_holdout_sampler)
   test_loader_all = DataLoader(test_dataset, batch_size=config.batch_size)
 
-  train_dataset.printDistributions(train_idx, msg = "Training", logger= logger)
-  train_dataset.printDistributions(val_idx, msg = "Val",  logger= logger)
-  test_dataset.printDistributions(range(len(test_dataset)), msg="Test",  logger= logger)
+  train_dataset.printDistributions(train_idx, msg = "Training", logger= logger, hold_out = -1)
+  train_dataset.printDistributions(val_idx, msg = "Val",  logger= logger, hold_out = -1)
+  test_dataset.printDistributions(range(len(test_dataset)), msg="Test",  logger= logger, hold_out = -1)
 
   config.train_loader = train_loader
   config.val_loader = val_loader
