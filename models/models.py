@@ -23,7 +23,7 @@ class SimpleAudioRNN(nn.Module):
   def __init__(self, config):
     super(SimpleAudioRNN, self).__init__()
     self.config = config
-    self.rnn = nn.LSTM(34, config.hidden_size, batch_first = True)
+    self.rnn = nn.LSTM(68, config.hidden_size, batch_first = True)
     self.decoder =  nn.Linear(config.hidden_size, config.num_classes)
 
   def forward(self, input):
@@ -56,7 +56,35 @@ class ComplexAudioRNN_1(nn.Module):
     #hidden_state, cell_state = hidden
     decoded = self.decoder(seq_output)
     #output = pad_packed_sequence(output, batch_first = True)
-    return decoded 
+    return decoded
+
+class SpeakerDependentRNN(nn.Module):
+ def __init__(self, config, feature_size = 34): 
+    super(SpeakerDependentRNN, self).__init__()
+    self.config = config
+    self.rnn = nn.LSTM(feature_size, config.hidden_size, batch_first=True)
+    self.flat_dim = config.max_length * config.hidden_size
+    self.speaker_net = nn.Sequential(
+            Flatten(),
+            nn.Linear(feature_size, feature_size)
+        )
+    self.audio_net = nn.Sequential(
+          Flatten()
+        )
+    self.classifier = nn.Sequential(
+          nn.Linear(self.flat_dim + feature_size, config.hidden_size*2),
+          nn.BatchNorm1d(config.hidden_size*2),
+          nn.ReLU(),
+          nn.Linear(config.hidden_size*2, config.num_classes)
+        )
+ def forward(self, input, speaker_features):
+    seq_output, hidden = self.rnn(input)
+    audio_output = self.audio_net(seq_output)
+    speaker_output = self.speaker_net(speaker_features)
+    decoded = self.classifier(torch.cat((audio_output, speaker_output), 1))
+    return decoded
+
+
 
 #### UNDER_DEVELOPMENT: ComplexAudioRNN_2
 
@@ -145,9 +173,4 @@ class RNNHybrid_1(nn.Module):
     activations = torch.cat((lex_activations, audio_activation), 1)
     decoded = self.final_decoder(activations)
     #output = pad_packed_sequence(output, batch_first = True)
-    return decoded 
-
-
-
-
-
+    return decoded

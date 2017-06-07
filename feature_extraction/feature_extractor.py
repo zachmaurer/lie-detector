@@ -16,6 +16,7 @@ Output of stFeatureExtraction is described here https://github.com/tyiannak/pyAu
 """
 labels = {}
 features = {}
+filename_to_speaker = {}
 #Should work after running converter.py
 datadir = "../data/processed/"
 frame_size = 0.050*2
@@ -43,12 +44,13 @@ for i, dirname in enumerate(os.listdir(datadir)):
 		#we might want to play with the timeframe here - as it is this is giving us up to ~1.5k frames for our sequences
 		speaker_feat = speaker_features[dirname]
 		st_features = audioFeatureExtraction.stFeatureExtraction(x, Fs, frame_size*Fs, frame_stepsize*Fs)
-		num_features, num_windows = st_features.shape
-		new_features = np.zeros((num_features, num_windows))
-		for i in range(num_features):
-			new_features[i] = (st_features[i] - speaker_feat[i])/speaker_feat[i]
-		st_features = np.concatenate((st_features, new_features))
+		#num_features, num_windows = st_features.shape
+		#new_features = np.zeros((num_features, num_windows))
+		#for i in range(num_features):
+		#	new_features[i] = (st_features[i] - speaker_feat[i])/speaker_feat[i]
+		#st_features = np.concatenate((st_features, new_features))
 		features[filename] = st_features.tolist()
+		filename_to_speaker[filename] = speaker_features[dirname]
 		total += 1
 	print(i)
 print(total)
@@ -56,3 +58,5 @@ with open('labels_{}_{}.json'.format(frame_size, frame_stepsize), 'w') as label_
 	json.dump(labels,label_file)
 with open('extracted_features_{}_{}.json'.format(frame_size, frame_stepsize),'w') as feature_file:
 	json.dump(features,feature_file)
+with open('audio_to_speaker_{}_{}.json'.format(frame_size, frame_stepsize), 'w') as audio_speaker_file:
+	json.dump(filename_to_speaker, audio_speaker_file)

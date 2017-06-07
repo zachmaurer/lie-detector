@@ -33,6 +33,7 @@ class Config:
     self.hidden_size = args.hs
     self.feats = args.feats
     self.labels = args.labels
+    self.speaker_feats = args.speaker
     self.max_length = args.length
     #self.eval_every = args.ee
     self.use_gpu = args.gpu
@@ -51,6 +52,7 @@ def parseConfig(description="Default Model Description"):
   
   parser.add_argument('--feats', type=str, help='input features path', default = "../data/features/extracted_features_0.1_0.05.json")
   parser.add_argument('--labels', type=str, help='input labels', default = "../data/features/labels_0.1_0.05.json")
+  parser.add_argument('--speaker', type=str, help='speaker features', default = "../data/features/audio_to_speaker_0.1_0.05.json")  
   parser.add_argument('--length', type=int, help='length of sequence', default = 300)
   parser.add_argument('--bs', type=int, help='batch size for training', default = 20)
   parser.add_argument('--e', type=int, help='number of epochs', default = 10)
@@ -73,12 +75,13 @@ def train(model, loss_fn, optimizer, num_epochs = 1):
       print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
       model.train()
       loss_total = 0
-      for t, (x, y) in enumerate(model.config.train_loader):
+      for t, (x, speaker, y) in enumerate(model.config.train_loader):
           x_var = Variable(x)
+          speaker_var = Variable(speaker)
           y_var = Variable(y.type(model.config.dtype).long())
-          scores = model(x_var) 
+          scores = model(x_var, speaker_var)
           loss = loss_fn(scores, y_var)
-          
+
           loss_total += loss.data[0]
           optimizer.zero_grad()
           loss.backward()
@@ -89,8 +92,7 @@ def train(model, loss_fn, optimizer, num_epochs = 1):
             grad_magnitude = [(x.grad.data.sum(), torch.numel(x.grad.data)) for x in model.parameters() if x.grad.data.sum() != 0.0]
             grad_magnitude = sum([abs(x[0]) for x in grad_magnitude]) #/ sum([x[1] for x in grad_magnitude])
             print('t = %d, avg_loss = %.4f, grad_mag = %.2f' % (t + 1, loss_total / (t+1), grad_magnitude))
-          
-          
+      
       print("--- Evaluating ---")
       check_accuracy(model, model.config.train_loader, type = "train")
       check_accuracy(model, model.config.val_loader, type = "val")
@@ -106,10 +108,11 @@ def check_accuracy(model, loader, type=""):
   num_correct = 0
   num_samples = 0
   model.eval() # Put the model in test mode (the opposite of model.train(), essentially)
-  for t, (x, y) in enumerate(loader):
+  for t, (x, speaker, y) in enumerate(loader):
       x_var = Variable(x)
+      speaker_var = Variable(speaker)
       #y_var = Variable(y.type(model.config.dtype).long())
-      scores = model(x_var)
+      scores = model(x_var, speaker_var)
       _, preds = scores.data.cpu().max(1)
       num_correct += (preds == y).sum()
       num_samples += preds.size(0)
@@ -132,30 +135,29 @@ def main():
   #vocab, embeddings, embedding_dim = load_word_vectors('.', 'glove.6B', 100)
 
   # Model
-  model = ComplexAudioRNN_2(config)
+  model = SpeakerDependentRNN(config)
   model.apply(initialize_weights)
   if config.use_gpu:
     model = model.cuda()
 
 
   # Load Data
-  train_dataset = AudioDataset(config)
+  train_dataset = SpeakerDependentDataset(config)
 
   train_idx, val_idx = splitIndices(train_dataset, config, shuffle = True)
   train_sampler, val_sampler = SubsetRandomSampler(train_idx), SubsetRandomSampler(val_idx)
   train_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 3, sampler = train_sampler)
   val_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 1, sampler = val_sampler)
 
-  train_dataset.printDistributions(train_idx, msg = "Training")
+  truth_weight, lie_weight = train_dataset.printDistributions(train_idx, msg = "Training")
   train_dataset.printDistributions(val_idx, msg = "Val")
 
   config.train_loader = train_loader
   config.val_loader = val_loader
 
-  optimizer = optim.Adam(model.parameters(), lr = config.lr) 
+  optimizer = optim.Adam(model.parameters(), lr = config.lr, weight_decay=1e-2) 
   loss_fn = nn.CrossEntropyLoss().type(config.dtype)
   train(model, loss_fn, optimizer, config.epochs)
-  
 
 if __name__ == '__main__':
   main()

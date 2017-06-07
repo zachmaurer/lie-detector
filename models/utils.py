@@ -90,18 +90,30 @@ class AudioDataset(Dataset):
         self.labels = ujson.load(labels)
       assert(self.features and self.labels)
       self.examples = list(self.labels.keys())
+      self.global_mean  = torch.zeros(1,68)
+      num_examples = 0
       for key in self.examples:
         feat_tensor = (torch.FloatTensor(self.features[key])[:, 0:config.max_length]).contiguous().type(config.dtype)
         if feat_tensor.size(1) < config.max_length:
           feat_tensor = pad_tensor(feat_tensor, config.max_length)
         del self.features[key]
         self.features[key] = feat_tensor.t()
+        self.global_mean += self.features[key].sum(dim = 0)
+        num_examples += 1
+      self.config = config
+      self.global_mean /= num_examples
+      self.global_mean = torch.FloatTensor(self.global_mean)
+
+
       self.num_examples = len(self.examples)
 
     def __getitem__(self, idx):
       key = self.examples[idx]
       label = self.labels[key]
       feats = self.features[key]
+      #print(feats.size(), self.global_mean.size())
+      #print((feats - self.global_mean).size())
+      #return feats - self.global_mean.expand(self.config.max_length, 68), label
       return feats, label
 
     def __len__(self):
@@ -118,7 +130,73 @@ class AudioDataset(Dataset):
           truths += 1
       print("--- Distribution of {} Data ---".format(msg))
       print("TRUTH: {} ({:.2f}%)".format(truths, truths / len(indices) *100))
-      print("LIE: {} ({:.2f}%)\n".format(lies, lies / len(indices) *100))  
+      print("LIE: {} ({:.2f}%)\n".format(lies, lies / len(indices) *100)) 
+      return truths/len(indices), lies/len(indices)
+
+class SpeakerDependentDataset(Dataset):
+    """Dataset wrapping data and target tensors. Naive implementation does data preprocessing per 'get_item' call
+    Each sample will be retrieved by indexing both tensors along the first
+    dimension.
+    
+    Arguments:
+        data_path (str): path to image folder
+    """
+    def __init__(self, config):
+      #super.__init__()
+      self.labels, self.features, self.examples = None, None, None
+      with open(config.feats, 'r') as data:
+        self.features = ujson.load(data)
+      with open(config.speaker_feats, 'r') as speaker_feats:
+        self.speaker_feats = ujson.load(speaker_feats)
+      with open(config.labels, 'r') as labels:
+        self.labels = ujson.load(labels)
+      assert(self.features and self.labels)
+      assert(self.speaker_feats)
+      self.examples = list(self.labels.keys())
+      self.global_mean  = torch.zeros(1,68)
+      num_examples = 0
+      for key in self.examples:
+        feat_tensor = (torch.FloatTensor(self.features[key])[:, 0:config.max_length]).contiguous().type(config.dtype)
+        speaker_tensor = (torch.FloatTensor(self.speaker_feats[key])).contiguous().type(config.dtype)
+        if feat_tensor.size(1) < config.max_length:
+          feat_tensor = pad_tensor(feat_tensor, config.max_length)
+        del self.features[key]
+        del self.speaker_feats[key]
+        self.features[key] = feat_tensor.t()
+        self.speaker_feats[key] = speaker_tensor
+        #self.global_mean += self.features[key].sum(dim = 0)
+        num_examples += 1
+      self.config = config
+      #self.global_mean /= num_examples
+      #self.global_mean = torch.FloatTensor(self.global_mean)
+      self.num_examples = len(self.examples)
+
+    def __getitem__(self, idx):
+      key = self.examples[idx]
+      label = self.labels[key]
+      feats = self.features[key]
+      speaker_feats = self.speaker_feats[key]
+      #print(feats.size(), self.global_mean.size())
+      #print((feats - self.global_mean).size())
+      #return feats - self.global_mean.expand(self.config.max_length, 68), label
+      return feats, speaker_feats, label
+
+    def __len__(self):
+      return self.num_examples
+
+    def printDistributions(self, indices, msg = ""):
+      lies, truths = 0, 0
+      for i in indices:
+        key = self.examples[i]
+        label = self.labels[key]
+        if label == LABELS["lie"]:
+          lies += 1
+        else:
+          truths += 1
+      print("--- Distribution of {} Data ---".format(msg))
+      print("TRUTH: {} ({:.2f}%)".format(truths, truths / len(indices) *100))
+      print("LIE: {} ({:.2f}%)\n".format(lies, lies / len(indices) *100)) 
+      return truths/len(indices), lies/len(indices)
 
 
 ##################
@@ -159,7 +237,3 @@ class HybridDataset(AudioDataset):
       indices = indices + [self.vocab['<PAD>']]*(max_length - len(indices))
       indices = indices[0:max_length]
       return indices
-
-
-
-
