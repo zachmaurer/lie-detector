@@ -1,6 +1,7 @@
 
 # Python Imports
 import argparse
+import copy 
 
 # Torch Imports
 import torch
@@ -72,6 +73,8 @@ def parseConfig(description="Hybrid text and audio RNN"):
 ############
 
 def hybrid_train(model, loss_fn, optimizer, num_epochs = 1, logger = None, hold_out = -1):
+  best_val_acc = 0
+  best_model = None
   for epoch in range(num_epochs):
       print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
       model.train()
@@ -96,12 +99,16 @@ def hybrid_train(model, loss_fn, optimizer, num_epochs = 1, logger = None, hold_
           
       print("--- Evaluating ---")
       check_accuracy(model, model.config.train_loader, type = "train")
-      check_accuracy(model, model.config.val_loader, type = "val")
+      val_acc = check_accuracy(model, model.config.val_loader, type = "val")
+      if val_acc > best_val_acc:
+        best_val_acc = val_acc
+        best_model = copy.deepcopy(model)
       print("\n")
   print("\n--- Final Evaluation ---")
   check_accuracy(model, model.config.train_loader, type = "train", logger = logger, hold_out = hold_out)
   check_accuracy(model, model.config.val_loader, type = "val", logger = logger, hold_out = hold_out)
   #check_accuracy(model, model.config.test_loader, type = "test")
+  return best_model
 
 
 def check_accuracy(model, loader, type="", logger = None, hold_out = -1):
@@ -128,6 +135,7 @@ def check_accuracy(model, loader, type="", logger = None, hold_out = -1):
     for i in range(len(examples)):
       row = "{},{},{},{},{}".format(type, examples[i], all_labels[i], all_predicted[i], hold_out)
       logger.logResult(row)
+  return acc
 
 def eval_on_test_set(model,loss_fn,num_epochs=1, logger = None, hold_out = -1):
   #first check the accuracy of the model on all of the data
@@ -149,35 +157,47 @@ def main():
   # Load Embeddings
   vocab, embeddings, embedding_dim = load_word_vectors('../data/glove', 'glove.6B', 100)
 
-  # Model
-  model = RNNHybrid_1(config, embeddings, vocab)
-  
-  # Weights Init
-  model.apply(initialize_weights)
-  if config.use_gpu:
-    model = model.cuda()
-
-
   # Load Data
-  train_dataset = HybridDataset(config, vocab)
+  #train_dataset = HybridDataset(config, vocab)
+  for hold_out in range(1, 33):
+    # Model
+    model = RNNHybrid_1(config, embeddings, vocab)
+    print("Hold-out: ", hold_out)
+    # Weights Init
+    model.apply(initialize_weights)
+    if config.use_gpu:
+      model = model.cuda()
 
-  # Train-Val Split
-  train_idx, val_idx = splitIndices(train_dataset, config, shuffle = True)
-  train_sampler, val_sampler = SubsetRandomSampler(train_idx), SubsetRandomSampler(val_idx)
-  train_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 3, sampler = train_sampler)
-  val_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 1, sampler = val_sampler)
-  config.train_loader = train_loader
-  config.val_loader = val_loader
+    train_dataset, test_dataset = getHybridDatasets(config, vocab, hold_out={hold_out})
+    train_idx, val_idx = splitIndices(train_dataset, config.nt, config.nv, shuffle = True)
+    test_finetuning_idx, test_holdout_idx = splitIndices(test_dataset, len(test_dataset), shuffle = True)
 
-  # Print Distributions
-  train_dataset.printDistributions(train_idx, msg = "Training", logger= logger)
-  train_dataset.printDistributions(val_idx, msg = "Val", logger= logger)
+    train_sampler, val_sampler = SubsetRandomSampler(train_idx), SubsetRandomSampler(val_idx)
+    test_finetuning_sampler, test_holdout_sampler = SubsetRandomSampler(test_finetuning_idx), SubsetRandomSampler(test_holdout_idx)
 
-  # Train
-  optimizer = optim.Adam(model.parameters(), lr = config.lr) 
-  loss_fn = nn.CrossEntropyLoss().type(config.dtype)
-  hybrid_train(model, loss_fn, optimizer, config.epochs, logger= logger)
-  
+    train_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 3, sampler = train_sampler)
+    val_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 1, sampler = val_sampler)
+    test_loader_finetuning = DataLoader(test_dataset, batch_size = config.batch_size/2, num_workers = 1, sampler = test_finetuning_sampler)
+    test_loader_holdout = DataLoader(test_dataset, batch_size = config.batch_size/2, num_workers = 1, sampler = test_holdout_sampler)
+    test_loader_all = DataLoader(test_dataset, batch_size=config.batch_size)
+
+    train_dataset.printDistributions(train_idx, msg = "Training", logger= logger, hold_out = hold_out)
+    train_dataset.printDistributions(val_idx, msg = "Val",  logger= logger, hold_out = hold_out)
+    test_dataset.printDistributions(range(len(test_dataset)), msg="Test",  logger= logger, hold_out = hold_out)
+
+    config.train_loader = train_loader
+    config.val_loader = val_loader
+    config.test_loader_all = test_loader_all
+    config.test_loader_finetuning = test_loader_finetuning
+    config.test_loader_holdout = test_loader_holdout
+
+    optimizer = optim.Adam(model.parameters(), lr = config.lr) 
+    loss_fn = nn.CrossEntropyLoss().type(config.dtype)
+    best_model = hybrid_train(model, loss_fn, optimizer, config.epochs, logger = logger, hold_out = hold_out)
+
+    #test on the held out speaker
+    eval_on_test_set(best_model, loss_fn, logger = logger, hold_out = hold_out)
+
 
 if __name__ == '__main__':
   main()
