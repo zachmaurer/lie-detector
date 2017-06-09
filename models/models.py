@@ -149,5 +149,65 @@ class RNNHybrid_1(nn.Module):
 
 
 
+class RNN_Lex(nn.Module):
+  def __init__(self, config, embeddings, vocab, glove_dim = 100, audio_dim = 34):
+    super(RNN_Lex, self).__init__()
+    self.config = config
+    self.vocab = vocab
+    self.hidden_size = self.config.hidden_size
+
+    # Embeddings
+    self.n_words, self.hidden_size = embeddings.size()
+    self.encoder = nn.Embedding(len(vocab), glove_dim, len(vocab)-1) # TODO FIX?
+    self.encoder.weight = nn.Parameter(embeddings)
+    
+    # Encoders
+    #self.audio_rnn = nn.LSTM(audio_dim, self.hidden_size, batch_first = True)
+    self.lex_rnn = nn.LSTM(glove_dim, self.hidden_size, batch_first = True)
+    
+    # Decoders
+    #self.flat_dim = config.max_length * self.hidden_size    
+    #self.audio_decoder = nn.Sequential(
+            #         Flatten(),
+            #         nn.Linear(self.flat_dim, 2*self.hidden_size),
+            #         nn.BatchNorm1d(2*self.hidden_size),
+            #         nn.ReLU(),
+            #         nn.Dropout(0.1),
+            #         nn.Linear(2*self.hidden_size, self.hidden_size)
+            # )
+
+    self.lex_decoder = nn.Sequential(
+                nn.Linear(self.hidden_size, self.hidden_size),
+                nn.BatchNorm1d(self.hidden_size),
+                nn.ReLU(),
+                nn.Dropout(0.2),
+                nn.Linear(self.hidden_size, self.hidden_size),
+                nn.ReLU(),
+                nn.Linear(self.hidden_size, config.num_classes)
+            )
+
+    #self.final_decoder = nn.Linear(self.hidden_size, config.num_classes)
+
+  def forward(self, lex_input):  
+    # Lexical 
+    embedded_lex = self.encoder(lex_input)
+    #embedded = pack_padded_sequence(embedded, batch_first = True)
+    lex_hidden_seq, lex_hidden = self.lex_rnn(embedded_lex)
+    hidden_state_lex, _ = lex_hidden
+    lex_activations = self.lex_decoder(hidden_state_lex.squeeze(0))
+
+    # Audio
+    #audio_seq, audio_hidden = self.audio_rnn(audio_input)
+    #hidden_state_audio, _ = audio_hidden
+    #audio_activation = self.audio_decoder(audio_seq)
+
+    # Aggregation
+    #print(lex_activations.size(), audio_activation.size())
+    #activations = torch.cat((lex_activations, audio_activation), 1)
+    #decoded = self.final_decoder(activations)
+    #output = pad_packed_sequence(output, batch_first = True)
+    return lex_activations 
+
+
 
 
