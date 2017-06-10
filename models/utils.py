@@ -10,6 +10,27 @@ import json
 from datetime import datetime
 import os
 
+
+
+def checkpointModel(model):
+    checkpoint = {
+        'state_dict': model.state_dict(),
+      }
+    return checkpoint
+   
+
+def saveCheckpoint(checkpoint, logger):
+  print("Saving checkpoint...")
+  filename = "{}_model.ckpt".format(logger.timestamp)
+  torch.save(checkpoint, filename)
+
+def loadModel(model, file):
+    # https://discuss.pytorch.org/t/on-a-cpu-device-how-to-load-checkpoint-saved-on-gpu-device/349/7
+    print("Loading checkpoint: {}".format(file))
+    checkpoint = torch.load(file, map_location=lambda storage, loc: storage)
+    model.load_state_dict(checkpoint['state_dict'])
+
+
 ##########
 # Logger #
 #########
