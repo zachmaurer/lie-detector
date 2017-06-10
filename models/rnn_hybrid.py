@@ -12,7 +12,7 @@ import torch.optim as optim
 from torch.utils.data import DataLoader 
 from torch import cuda, FloatTensor
 from torch import nn
-from torch.utils.data.sampler import SubsetRandomSampler
+from torch.utils.data.sampler import SubsetRandomSampler, SequentialSampler
 
 # Our modules
 from models import *
@@ -72,6 +72,8 @@ def parseConfig(description="Hybrid text and audio RNN"):
 ############
 
 def hybrid_train(model, loss_fn, optimizer, num_epochs = 1, logger = None, hold_out = -1):
+  best_val = 0
+  checkpoint = None
   for epoch in range(num_epochs):
       print('Starting epoch %d / %d' % (epoch + 1, num_epochs))
       model.train()
@@ -96,11 +98,15 @@ def hybrid_train(model, loss_fn, optimizer, num_epochs = 1, logger = None, hold_
           
       print("--- Evaluating ---")
       check_accuracy(model, model.config.train_loader, type = "train")
-      check_accuracy(model, model.config.val_loader, type = "val")
+      val_acc = check_accuracy(model, model.config.val_loader, type = "val")
+      if val_acc > best_val:
+        best_val = val_acc
+        checkpoint = checkpointModel(model)
       print("\n")
   print("\n--- Final Evaluation ---")
   check_accuracy(model, model.config.train_loader, type = "train", logger = logger, hold_out = hold_out)
   check_accuracy(model, model.config.val_loader, type = "val", logger = logger, hold_out = hold_out)
+  saveCheckpoint(checkpoint, logger)
   #check_accuracy(model, model.config.test_loader, type = "test")
 
 
@@ -128,6 +134,7 @@ def check_accuracy(model, loader, type="", logger = None, hold_out = -1):
     for i in range(len(examples)):
       row = "{},{},{},{},{}".format(type, examples[i], all_labels[i], all_predicted[i], hold_out)
       logger.logResult(row)
+  return acc
 
 def eval_on_test_set(model,loss_fn,num_epochs=1, logger = None, hold_out = -1):
   #first check the accuracy of the model on all of the data
@@ -162,8 +169,8 @@ def main():
   train_dataset = HybridDataset(config, vocab)
 
   # Train-Val Split
-  train_idx, val_idx = splitIndices(train_dataset, config, shuffle = True)
-  train_sampler, val_sampler = SubsetRandomSampler(train_idx), SubsetRandomSampler(val_idx)
+  train_idx, val_idx = splitIndices(train_dataset, config.nt, shuffle = False)
+  train_sampler, val_sampler = SequentialSampler(train_idx), SequentialSampler(val_idx)
   train_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 3, sampler = train_sampler)
   val_loader = DataLoader(train_dataset, batch_size = config.batch_size, num_workers = 1, sampler = val_sampler)
   config.train_loader = train_loader
