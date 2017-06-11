@@ -51,7 +51,7 @@ class Config:
 
 def parseConfig(description="Hybrid text and audio RNN"):
   parser = argparse.ArgumentParser(description=description)
-  parser.add_argument('--feats', type=str, help='input features path', default = "../data/features/extracted_features_0.1_0.05.json")
+  parser.add_argument('--feats', type=str, help='input features path', default = "../data/features/64_extracted_features_0.1_0.05.json")
   parser.add_argument('--labels', type=str, help='input labels', default = "../data/features/labels_0.1_0.05.json")
   parser.add_argument('--transcripts', type=str, help='input labels', default = "../data/features/tokenized_transcripts.json")
   parser.add_argument('--length', type=int, help='length of audio sequence', default = 300)
